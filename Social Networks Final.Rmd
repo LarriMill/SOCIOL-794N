@@ -1,0 +1,243 @@
+---
+title: "Social Networks Final"
+author: "Larri Miller"
+date: "5/8/2021"
+output: html_document
+---
+
+---
+title: "Larri Networks Final"
+output: html_notebook
+---
+```{r}
+tweets <- read.csv("SharpieGate.csv")
+```
+
+Using network analysis methods that I learned in Wayne Xu's "Digital Behavioral Data" class-- figured it was easier because it's catered to tweets specifically
+```{r}
+install.packages("devtools")
+install.packages("graphTweets")
+library(devtools) 
+devtools::install_bitbucket("JohnCoene/twinetverse")
+library(graphTweets)
+library(twinetverse)
+```
+
+```{r}
+extractrt <- function(tweets){
+  rt <- tweets %>% 
+    gt_edges(screen_name, retweet_screen_name) %>% # get edges
+    gt_nodes() %>% # get nodes
+    gt_collect() # collect
+  
+  return(rt)
+}
+rtnet <- extractrt(tweets)
+extractmt <- function(tweets){
+  
+  mt <- tweets %>% 
+    gt_edges(screen_name, mentions_screen_name) %>% # get edges
+    gt_nodes() %>% # get nodes
+    gt_collect() # collect
+  
+  return(mt)
+}
+mtnet <- extractmt(tweets)
+#define a function called nodes to extract node information from a network object
+nodes <- function(net){
+  
+  c(edges, nodes) %<-% net
+  nodes$id <- as.factor(nodes$nodes) 
+  nodes$size <- nodes$n 
+  nodes <- nodes2sg(nodes)
+  nodes <- nodes[,2:5]
+  
+  return(nodes)
+}
+#define a function called edges to extract edge information from a network object
+edges <- function(net){
+  
+  c(edges, nodes) %<-% net
+  edges$id <- seq(1, nrow(edges))
+  edges <- edges2sg(edges)
+  
+  return(edges)
+}
+#apply the two self-defined functions
+rtnet_nodes <- nodes(rtnet)
+rtnet_edges <- edges(rtnet)
+mtnet_nodes <- nodes(mtnet)
+mtnet_edges <- edges(mtnet)
+```
+
+```{r}
+nodes_unique <- unique(rtnet_nodes)
+```
+
+Converting to igraph, creating "net" as the network object
+```{r}
+library(igraph)
+
+net <- graph_from_data_frame(d=rtnet_edges, vertices = nodes_unique, directed = T)
+```
+
+
+Now following Week 7's tutorial for the power law distribution:
+```{r}
+install.packages(c("devtools", "network", "sna", "igraph", "intergraph"))
+library(devtools)
+install_github("DougLuke/UserNetR")
+
+library(igraph)
+library(UserNetR)
+```
+
+Gonna plot out the degree distribution
+```{r}
+plot(degree.distribution(net), type = "b",
+     xlab = "Degree",
+     ylab = "Proportion",
+     main = "SharpieGate Tweet Network")
+
+plot(degree.distribution(net),log='xy', 
+     xlab="Degree",
+     ylab="Proportion") 
+```
+# make unique lsit of nodes
+Well that looks hideous
+
+-- look at degree, cutoff
+-- log distribution
+
+Summary stats of network, just to warmup
+```{r}
+summary(net)
+
+graph.density(net)
+
+mean(degree(net))
+
+transitivity(net)
+
+```
+
+trying to isolate nodes with degree 7
+```{r}
+OL <- which(degree(net) >= 7)
+length(OL)
+OL
+```
+
+I've got 53 influencers in this network with a degree of over 7. Cool. 
+
+Trying to add a binary variable 
+```{r}
+net <- net %>%
+  mutate(influencer = ifelse((degree(net) >= 7), 1, 0))
+```
+Okay I can't add a new colunm to an igraph object that way...
+
+Let's change this to a network object bc I like working with those better
+```{r}
+library("intergraph")
+class(net)
+network=asNetwork(net)
+class(network)
+```
+
+```{r}
+summary(network)
+gden(network)
+components(network)
+
+lgc <- component.largest(network,result = "graph")
+gd <-geodist(lgc)
+max(gd$gdist)
+
+gtrans(network, mode="graph")
+
+deg=degree(network, gmode="digraph",cmode="freeman")
+outdeg=degree(network,gmode="digraph",cmode="outdegree")
+indeg=degree(network,gmode="digraph",cmode="indegree")
+summary(deg)
+summary(outdeg)
+summary(indeg)
+hist(deg)
+hist(outdeg)
+hist(indeg)
+
+
+# plot
+op <- par(mar=c(0,0,0,0)) 
+gplot(network, displayisolates = F, main = "Network")
+```
+proportion of reciprocated ties -- or how many people retweet each other
+```{r}
+grecip(network, measure="edgewise") 
+(2*dyad.census(network)[,"Mut"]/network.edgecount(network))
+```
+
+Let's make a subgraph of influencers
+```{r}
+netInfluencers <- get.inducedSubgraph(network, which(degree(network) >= 7))
+class(netInfluencers)
+
+netRest <- get.inducedSubgraph(network, which(degree(network) < 6))
+
+IRecip <- grecip(netInfluencers, measure="edgewise") 
+(2*dyad.census(netInfluencers)[,"Mut"]/network.edgecount(netInfluencers))
+IRecip
+
+rRecip <- grecip(netRest, measure="edgewise") 
+(2*dyad.census(netRest)[,"Mut"]/network.edgecount(netRest))
+rRecip
+```
+
+Let's try some visualization
+```{r}
+idlabel <- get.vertex.attribute(netInfluencers,"id")
+idlabel
+par(op)
+gplot(netInfluencers, usearrows = TRUE, vertex.col="violet", gmode="graph", label = idlabel)
+
+network.size(netInfluencers)
+summary(netInfluencers)
+```
+let's try to vary node size
+```{r}
+
+par(op)
+
+gplot(netInfluencers, usearrows = TRUE, vertex.col="violet", gmode="graph",mode="fruchtermanreingold", label = idlabel)
+
+gplot(netInfluencers, usearrows = TRUE, vertex.col="violet", gmode="graph",mode="circle", vertex.cex=1.5, label = idlabel)
+
+gplot(netInfluencers, usearrows = TRUE, vertex.col="violet", gmode="graph",mode="princoord", vertex.cex=1.5, label = idlabel)
+
+```
+
+
+```{r}
+gplot(netRest, usearrows = TRUE, vertex.col="grey", gmode="graph")
+```
+```{r}
+library(sna)
+summary(netInfluencers)
+gden(netInfluencers)
+components(netInfluencers)
+
+lgc <- component.largest(netInfluencers,result = "graph")
+gd <-geodist(lgc)
+max(gd$gdist)
+
+gtrans(netInfluencers, mode="graph")
+```
+
+hmmmm whole network plot with varying node sizes?
+```{r}
+deg = degree(network, gmode="graph")
+
+par(op)
+gplot(network,usearrows=F,vertex.cex=deg/35)
+```
+
